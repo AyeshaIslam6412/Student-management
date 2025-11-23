@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import  OTP 
 from django.contrib.auth import get_user_model
 from django.contrib.auth import authenticate
-
+from .models import UserProfile
 User = get_user_model()
 
 class CustomUserSerializer(serializers.ModelSerializer):

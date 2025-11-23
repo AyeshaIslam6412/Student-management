@@ -9,11 +9,12 @@ from .serializers import (
     CustomUserCreateSerializer,
     OTPSerializer,
     LoginSerializer
+    
 )
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
-
+from .models import UserProfile
 
 import random
 
