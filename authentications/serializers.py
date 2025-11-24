@@ -2,8 +2,23 @@ from rest_framework import serializers
 from .models import  OTP 
 from django.contrib.auth import get_user_model
 from django.contrib.auth import authenticate
-from .models import UserProfile
+from authentications.models import UserProfile
+# from .models import Subscription
 User = get_user_model()
+
+
+
+# class RegisterSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = User
+#         fields = ["email", "name", "password"]
+#         extra_kwargs = {
+#             "password": {"write_only": True}
+#         }
+
+#     def create(self, validated_data):
+#         validated_data["password"] = make_password(validated_data["password"])
+#         return super().create(validated_data)
 
 class CustomUserSerializer(serializers.ModelSerializer):
     user_profile = serializers.SerializerMethodField()
@@ -12,9 +27,20 @@ class CustomUserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'role']
         read_only_fields = ['id', 'is_active', 'is_staff', 'is_superuser']
+        
+    def get_user_profile(self, obj):
+        try:
+            profile = obj.user_profile
+            return UserGetProfileSerializer(profile).data
+        except UserProfile.DoesNotExist:
+            return None
+
+    
 
 class CustomUserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    first_name = serializers.CharField(write_only=True)
+    last_name = serializers.CharField(write_only=True)
    
     class Meta:
         model = User
@@ -22,19 +48,42 @@ class CustomUserCreateSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         # Extract name from validated_data
+        first_name = validated_data.pop('first_name')  # Remove name since it's not part of the User model
+        last_name = validated_data.pop('last_name')  # Remove name since it's not part of the User model
         user = User.objects.create_user(
             email=validated_data['email'],
             password=validated_data['password'],
             role=validated_data.get('role', 'user')
         )
-       
+        UserProfile.objects.create(
+            user=user,
+            first_name=first_name,
+            last_name = last_name
+        )
+        # Subscription.objects.create(user=user)
         return user
+
 
 class OTPSerializer(serializers.ModelSerializer):
     class Meta:
         model = OTP
         fields = ['id', 'email', 'otp', 'created_at', 'attempts']
         read_only_fields = ['id', 'created_at', 'attempts']
+        
+class UserProfileSerializer(serializers.ModelSerializer):
+   
+    user=CustomUserSerializer(read_only=True)
+    class Meta:
+        model = UserProfile
+        fields = ['id', 'user', 'first_name', 'last_name' ,'profile_picture','phone_number', 'joined_date']
+        read_only_fields = ['id', 'joined_date']
+        
+class UserGetProfileSerializer(serializers.ModelSerializer):
+   
+    class Meta:
+        model = UserProfile
+        fields = ['id', 'user', 'first_name', 'last_name' ,'profile_picture','phone_number', 'joined_date']
+        read_only_fields = ['id', 'joined_date']
 
 
 class LoginSerializer(serializers.Serializer):

@@ -1,29 +1,27 @@
 from django.contrib.auth.hashers import make_password
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.renderers import JSONRenderer
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import get_user_model
-from .models import OTP
+from .models import OTP, UserProfile
 from .serializers import (
     CustomUserCreateSerializer,
     OTPSerializer,
-    LoginSerializer
-    
+    LoginSerializer,
+    UserProfileSerializer
 )
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
-from .models import UserProfile
 
 import random
-
 def generate_otp():
     return str(random.randint(100000, 999999))  
 
 
 User = get_user_model()
-
 
 def send_otp_email(email, otp):
     html_content = render_to_string('otp_email_template.html', {'otp': otp, 'email': email})
@@ -35,31 +33,76 @@ def send_otp_email(email, otp):
     )
     msg.attach_alternative(html_content, "text/html")
     msg.send(fail_silently=False)
-
-
-
+    
+def send_mail(email, password):
+    html_content = render_to_string('otp_email_template.html', {'password': password, 'email': email})
+    msg = EmailMultiAlternatives(
+        subject='Your Creadential',
+        body=f'Your password is {password}',
+        from_email='Alomacitypulse <alamocitypulse@alamocitypulse.com>',
+        to=[email]
+    )
+    msg.attach_alternative(html_content, "text/html")
+    msg.send(fail_silently=False)
+    
 # ✅ Register user
 @api_view(['POST'])
 @permission_classes([AllowAny])
+# @permission_classes([JSONRenderer])
 def register_user(request):
     serializer = CustomUserCreateSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
 
         # Generate tokens (same as login)
-        from rest_framework_simplejwt.tokens import RefreshToken
         refresh = RefreshToken.for_user(user)
 
-        return Response({
-            "access_token": str(refresh.access_token),
-            "refresh_token": str(refresh),
-            "role": user.role,
-        }, status=status.HTTP_201_CREATED)
+        # Choose profile based on role
+    if user.role in ['admin', 'student','teacher']:
+        try:
+            profile = user.user_profile
+        except UserProfile.DoesNotExist:
+            profile = UserProfile.objects.create(
+                user=user,
+                first_name=user.email.split('@')[0]  # FIXED
+            )
+            
+        profile_serializer = UserProfileSerializer(profile)
+    else:
+        return Response(
+            {"error": "Invalid user role"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    return Response({
+        "access_token": str(refresh.access_token),
+        "refresh_token": str(refresh),
+        "role": user.role,
+        "profile": profile_serializer.data
+    }, status=status.HTTP_201_CREATED)
+    #     if user.role in ['teacher', 'admin','student']:
+    #         try:
+    #             profile = user.user_profile
+    #         except UserProfile.DoesNotExist:
+    #             profile = UserProfile.objects.create(
+    #                 user=user,
+    #                 name=user.email.split('@')[0]
+    #             )
+    #         profile_serializer = UserProfileSerializer(profile)
+    #     else:
+    #         return Response(
+    #             {"error": "Invalid user role"},
+    #             status=status.HTTP_400_BAD_REQUEST
+    #         )
 
+    #     return Response({
+    #         "access_token": str(refresh.access_token),
+    #         "refresh_token": str(refresh),
+    #         "role": user.role,
+    #         "profile": profile_serializer.data
+    #     }, status=status.HTTP_201_CREATED)
 
-
+    # return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)    
 
 @api_view(["POST"])
 def login(request):
@@ -68,15 +111,22 @@ def login(request):
         user = serializer.validated_data
         refresh = RefreshToken.for_user(user)
         
+        try:
+            profile = user.user_profile
+            profile_data = UserProfileSerializer(profile).data
+        except UserProfile.DoesNotExist:
+            profile_data = None 
+                
         return Response({
             "access_token": str(refresh.access_token),
             "refresh_token": str(refresh),
             "role": user.role,
+            "profile":profile_data
         }, status=status.HTTP_200_OK)
     print("serializer.errors",serializer.errors)
     return Response(serializer.errors, status=status.HTTP_401_UNAUTHORIZED)
 
-
+     
 # ✅ Create OTP
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -116,7 +166,6 @@ def verify_otp(request):
         return Response({"error": "Incorrect OTP"}, status=status.HTTP_400_BAD_REQUEST)
     except OTP.DoesNotExist:
         return Response({"error": "No OTP found for this email"}, status=status.HTTP_404_NOT_FOUND)
-
 
 
 
